@@ -10,8 +10,8 @@ if (!rootElement) {
 }
 
 // REPLACE THESE WITH YOUR ACTUAL AUTH0 CREDENTIALS
-const AUTH0_DOMAIN = "dev-37nud4isg6rug8tk.us.auth0.com";
-const AUTH0_CLIENT_ID = "VbEovpA1Q328gZjoHNTCkBl9Vtj9EiWY";
+const AUTH0_DOMAIN = "";
+const AUTH0_CLIENT_ID = "";
 
 const root = ReactDOM.createRoot(rootElement);
 root.render(
