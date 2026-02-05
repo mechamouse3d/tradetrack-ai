@@ -10,8 +10,7 @@ import DataManagementModal from './components/DataManagementModal';
 import { useAuth } from './contexts/AuthContext';
 import { fetchCurrentPrices } from './services/geminiService';
 import { PieChart as RechartsPieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
-// Add PieChart to lucide-react imports for the icon usage
-import { Plus, Database, TrendingUp, Upload, Loader2, ArrowRight, Sparkles, RefreshCw, ExternalLink, ShieldCheck, Cloud, CloudOff, Clock, HardDrive, PieChart, PieChart as PieChartIcon } from 'lucide-react';
+import { Plus, Database, TrendingUp, Upload, Loader2, ArrowRight, Sparkles, RefreshCw, ExternalLink, ShieldCheck, Cloud, CloudOff, Clock, HardDrive, PieChart as PieChartIcon, AlertCircle } from 'lucide-react';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1'];
 
@@ -25,6 +24,7 @@ const App: React.FC = () => {
   const [isGuestMode, setIsGuestMode] = useState(false);
   const [isDataLoaded, setIsDataLoaded] = useState(false);
   const [isRefreshingPrices, setIsRefreshingPrices] = useState(false);
+  const [priceError, setPriceError] = useState<string | null>(null);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
 
   // State for UI
@@ -34,10 +34,9 @@ const App: React.FC = () => {
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [isDataMgmtOpen, setIsDataMgmtOpen] = useState(false);
 
-  // 1. User-Specific Data Loading (Auth0 ID Caching)
+  // 1. User-Specific Data Loading
   useEffect(() => {
     if (isAuthLoading) return;
-
     setIsDataLoaded(false);
 
     if (!user) {
@@ -52,26 +51,19 @@ const App: React.FC = () => {
 
     const txKey = `transactions_${user.id}`;
     const pricesKey = `prices_${user.id}`;
-
     const savedTx = localStorage.getItem(txKey);
     const savedPrices = localStorage.getItem(pricesKey);
 
-    if (savedTx) {
-      setTransactions(JSON.parse(savedTx));
-    } else {
-      setTransactions([]);
-    }
+    if (savedTx) setTransactions(JSON.parse(savedTx));
+    else setTransactions([]);
 
-    if (savedPrices) {
-      setCurrentPrices(JSON.parse(savedPrices));
-    }
+    if (savedPrices) setCurrentPrices(JSON.parse(savedPrices));
     
     setIsDataLoaded(true);
   }, [user, isAuthLoading, isGuestMode]);
 
   // 2. Dynamic Price Fetching
   const portfolioSymbols = useMemo(() => {
-    // Normalize to Uppercase
     const symbols = new Set(transactions.map(t => t.symbol.toUpperCase().trim()));
     return Array.from(symbols);
   }, [transactions]);
@@ -79,12 +71,19 @@ const App: React.FC = () => {
   const updateMarketPrices = async (symbolsToFetch: string[]) => {
     if (symbolsToFetch.length === 0) return;
     setIsRefreshingPrices(true);
+    setPriceError(null);
     try {
       const { prices, sources } = await fetchCurrentPrices(symbolsToFetch);
       setCurrentPrices(prev => ({ ...prev, ...prices }));
       setPriceSources(sources);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to fetch market data", err);
+      const msg = err?.message || "";
+      if (msg.includes("429")) {
+        setPriceError("Rate limit hit. Prices will retry shortly.");
+      } else {
+        setPriceError("Market data unavailable.");
+      }
     } finally {
       setIsRefreshingPrices(false);
     }
@@ -92,31 +91,24 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (isDataLoaded && portfolioSymbols.length > 0) {
-      // Check if we have prices for all symbols (key check is case-sensitive, so use normalized symbols)
       const missingPrices = portfolioSymbols.filter(s => currentPrices[s] === undefined);
-      
       if (missingPrices.length > 0) {
         updateMarketPrices(portfolioSymbols);
       }
     }
-  }, [portfolioSymbols, isDataLoaded]); 
-  // Note: we purposely do not include currentPrices in dependency to avoid loops, 
-  // but if initial load has empty prices, missingPrices.length > 0 triggers fetch.
+  }, [portfolioSymbols, isDataLoaded]);
 
-  // 3. User-Specific Auto-Save (Caching)
+  // 3. User-Specific Auto-Save
   useEffect(() => {
     if (!isDataLoaded || isAuthLoading || !user) return;
-
     const txKey = `transactions_${user.id}`;
     const pricesKey = `prices_${user.id}`;
-
     localStorage.setItem(txKey, JSON.stringify(transactions));
     localStorage.setItem(pricesKey, JSON.stringify(currentPrices));
     setLastSaved(new Date());
   }, [transactions, currentPrices, user, isDataLoaded, isAuthLoading]);
 
   const handleSaveTransaction = (transactionData: Transaction | Omit<Transaction, 'id'>) => {
-    // Ensure normalization on save
     const normalizedData = {
         ...transactionData,
         symbol: transactionData.symbol.toUpperCase().trim(),
@@ -166,15 +158,12 @@ const App: React.FC = () => {
 
   const handleBulkImport = (newTransactions: Omit<Transaction, 'id'>[]) => {
       const transactionsWithIds = newTransactions.map(t => {
-          // Normalize type: Strictly BUY or SELL. 
-          // Default to BUY unless explicitly a SELL (e.g. "Sold", "Sell", "Disposition").
           const rawType = t.type ? t.type.toString().toUpperCase() : 'BUY';
           const normalizedType = rawType.includes('SELL') || rawType.includes('SOLD') ? 'SELL' : 'BUY';
-
           return {
             ...t,
             type: normalizedType as 'BUY' | 'SELL',
-            symbol: t.symbol.toUpperCase().trim(), // Normalize import
+            symbol: t.symbol.toUpperCase().trim(),
             id: Math.random().toString(36).substr(2, 9)
           };
       });
@@ -188,7 +177,6 @@ const App: React.FC = () => {
   const { portfolio, stats } = useMemo(() => {
     const groups: Record<string, Transaction[]> = {};
     transactions.forEach(t => {
-      // Robust key generation
       const symbolKey = t.symbol.toUpperCase().trim();
       if (!groups[symbolKey]) groups[symbolKey] = [];
       groups[symbolKey].push(t);
@@ -202,38 +190,30 @@ const App: React.FC = () => {
 
     Object.entries(groups).forEach(([symbol, txs]) => {
       txs.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
       let sharesHeld = 0;
       let totalCost = 0;
       let realizedPL = 0;
 
       txs.forEach(t => {
-        // Robust normalization: Convert strings to numbers and ensure type matches 'BUY'/'SELL' case-insensitively
         const shares = Number(t.shares);
         const price = Number(t.price);
         const type = (t.type || '').toString().toUpperCase().trim();
-
         if (isNaN(shares) || isNaN(price)) return;
-
         if (type === 'BUY') {
           sharesHeld += shares;
           totalCost += shares * price;
         } else if (type === 'SELL') {
           const avgCostPerShare = sharesHeld > 0 ? totalCost / sharesHeld : 0;
           const costOfSoldShares = shares * avgCostPerShare;
-          const revenue = shares * price;
-          realizedPL += (revenue - costOfSoldShares);
+          realizedPL += (shares * price - costOfSoldShares);
           sharesHeld -= shares;
           totalCost -= costOfSoldShares;
         }
       });
 
       if (sharesHeld < 0.000001) { sharesHeld = 0; totalCost = 0; }
-
       const avgCost = sharesHeld > 0 ? totalCost / sharesHeld : 0;
-      // Exact key match for price lookup
       const currentPrice = currentPrices[symbol] || null;
-      
       totalRealizedPL += realizedPL;
       totalCostBasis += totalCost;
       
@@ -258,7 +238,6 @@ const App: React.FC = () => {
     });
 
     stockSummaries.sort((a, b) => a.name.localeCompare(b.name));
-
     return {
       portfolio: stockSummaries,
       stats: { totalValue, totalCostBasis, totalRealizedPL, totalUnrealizedPL }
@@ -283,7 +262,6 @@ const App: React.FC = () => {
       );
   }
 
-  // --- Landing Page ---
   if (!user && !isGuestMode) {
     return (
       <div className="min-h-screen bg-[#FDFDFF]">
@@ -310,7 +288,6 @@ const App: React.FC = () => {
     );
   }
 
-  // --- Dashboard View ---
   return (
     <div className="min-h-screen pb-20 bg-slate-50">
       {isGuestMode && !user && (
@@ -329,7 +306,6 @@ const App: React.FC = () => {
               <h1 className="text-xl font-bold text-slate-900 tracking-tight">TradeTrack AI</h1>
             </div>
             
-            {/* Persistence / Sync Status */}
             {user && (
               <div className="hidden lg:flex items-center gap-3 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-full">
                 <div className="flex items-center gap-1.5 text-emerald-600">
@@ -348,9 +324,12 @@ const App: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-3">
-              <button onClick={() => updateMarketPrices(portfolioSymbols)} disabled={isRefreshingPrices} className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors" title="Refresh Live Prices">
-                 <RefreshCw size={18} className={isRefreshingPrices ? 'animate-spin' : ''} />
-              </button>
+              <div className="flex flex-col items-end mr-2">
+                {priceError && <span className="text-[9px] text-rose-500 font-bold uppercase animate-pulse">{priceError}</span>}
+                <button onClick={() => updateMarketPrices(portfolioSymbols)} disabled={isRefreshingPrices} className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors" title="Refresh Live Prices">
+                   <RefreshCw size={18} className={isRefreshingPrices ? 'animate-spin' : ''} />
+                </button>
+              </div>
               <button onClick={() => setIsImportOpen(true)} className="hidden md:flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 px-3.5 py-2 rounded-xl font-medium transition-colors text-sm">
                 <Upload size={16} /> Import
               </button>

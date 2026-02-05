@@ -129,20 +129,21 @@ const FileImportModal: React.FC<FileImportModalProps> = ({ onImport, onClose }) 
         onImport(transactions);
         onClose();
       } else {
-        setError("No transactions found. Ensure the document contains clear trade details (Buy/Sell, Symbol, Price, Date).");
+        setError("No transactions found. Ensure the document contains clear trade details.");
       }
 
     } catch (err: any) {
       console.error(err);
-      // Display the actual error message from the API or Logic
-      const msg = err instanceof Error ? err.message : "Unknown error";
+      const msg = err instanceof Error ? err.message : JSON.stringify(err);
       
-      if (msg.includes("403") || msg.includes("API key")) {
+      if (msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED") || msg.includes("quota")) {
+          setError("API Rate Limit Exceeded: You've reached the free tier limit. Please wait 60 seconds and try again, or switch to a paid API key.");
+      } else if (msg.includes("403") || msg.includes("API key")) {
           setError("API Key Error: Please check your Google Gemini API key configuration.");
       } else if (msg.includes("400")) {
-          setError("Bad Request: The file content might be unreadable or corrupt.");
+          setError("Bad Request: The file content might be unreadable or too large.");
       } else {
-          setError(`Import Failed: ${msg}`);
+          setError(`Import Failed: ${msg.substring(0, 150)}...`);
       }
     } finally {
       setIsProcessing(false);
@@ -188,7 +189,7 @@ const FileImportModal: React.FC<FileImportModalProps> = ({ onImport, onClose }) 
                    <input 
                     type="file" 
                     multiple 
-                    accept=".pdf,.csv,image/*,.xlsx,.xls" 
+                    accept=".pdf,.csv,image/*" 
                     className="hidden" 
                     id="file-upload"
                     onChange={handleFileSelect}
@@ -198,9 +199,12 @@ const FileImportModal: React.FC<FileImportModalProps> = ({ onImport, onClose }) 
            </div>
 
            {error && (
-               <div className="mb-4 p-3 bg-rose-50 text-rose-600 rounded-lg text-sm flex items-start gap-2">
-                   <AlertCircle size={16} className="shrink-0 mt-0.5" /> 
-                   <span>{error}</span>
+               <div className="mb-4 p-4 bg-rose-50 border border-rose-100 text-rose-700 rounded-xl text-sm flex items-start gap-3">
+                   <AlertCircle size={18} className="shrink-0 mt-0.5 text-rose-500" /> 
+                   <div className="flex flex-col gap-1">
+                       <span className="font-bold">Import Error</span>
+                       <span>{error}</span>
+                   </div>
                </div>
            )}
 

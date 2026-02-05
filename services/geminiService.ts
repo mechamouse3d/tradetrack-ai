@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 
 /**
@@ -94,7 +93,7 @@ export const parseDocumentsWithAI = async (files: { mimeType: string; data: stri
     });
 
     const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview",
+      model: "gemini-3-flash-preview",
       contents: {
         parts: [
           ...parts,
@@ -108,7 +107,7 @@ export const parseDocumentsWithAI = async (files: { mimeType: string; data: stri
       config: {
         responseMimeType: "application/json",
         thinkingConfig: {
-          thinkingBudget: 4000 
+          thinkingBudget: 2000 
         },
         responseSchema: {
           type: Type.ARRAY,
@@ -141,7 +140,7 @@ export const parseDocumentsWithAI = async (files: { mimeType: string; data: stri
 
 /**
  * Fetch current market prices using Google Search grounding.
- * Upgraded to gemini-3-pro-preview for complex data extraction.
+ * Using gemini-3-flash-preview for better quota availability.
  */
 export const fetchCurrentPrices = async (symbols: string[]): Promise<{ prices: Record<string, number>, sources: any[] }> => {
   if (symbols.length === 0) return { prices: {}, sources: [] };
@@ -149,7 +148,7 @@ export const fetchCurrentPrices = async (symbols: string[]): Promise<{ prices: R
   try {
     const ai = getAI();
     const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview",
+      model: "gemini-3-flash-preview",
       contents: `Get the exact realtime market price for these tickers: ${symbols.join(', ')}.
       
       Output the data as a JSON object where keys are the ticker symbols and values are the current share prices as numbers.
@@ -160,7 +159,7 @@ export const fetchCurrentPrices = async (symbols: string[]): Promise<{ prices: R
         tools: [{ googleSearch: {} }],
         responseMimeType: "application/json",
         thinkingConfig: {
-          thinkingBudget: 2000
+          thinkingBudget: 0
         }
       }
     });
@@ -178,6 +177,6 @@ export const fetchCurrentPrices = async (symbols: string[]): Promise<{ prices: R
     return { prices: normalizedPrices, sources };
   } catch (error) {
     console.error("Error fetching live prices:", error);
-    return { prices: {}, sources: [] };
+    throw error; // Let the caller handle it (e.g., App.tsx)
   }
 };
