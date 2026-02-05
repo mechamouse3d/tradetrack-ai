@@ -1,3 +1,4 @@
+
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
@@ -25,20 +26,24 @@ if (!AUTH0_DOMAIN || !AUTH0_CLIENT_ID) {
 }
 
 const root = ReactDOM.createRoot(rootElement);
+
+/**
+ * Note: React.StrictMode is intentionally removed here to prevent double-firing
+ * of useEffect hooks in development. This is a crucial optimization when working 
+ * with rate-limited APIs like the Gemini Google Search tool.
+ */
 root.render(
-  <React.StrictMode>
-    <Auth0Provider
-      domain={AUTH0_DOMAIN}
-      clientId={AUTH0_CLIENT_ID}
-      authorizationParams={{
-        redirect_uri: window.location.origin
-      }}
-      cacheLocation="localstorage"
-      useRefreshTokens={true}
-    >
-      <AuthProvider>
-        <App />
-      </AuthProvider>
-    </Auth0Provider>
-  </React.StrictMode>
+  <Auth0Provider
+    domain={AUTH0_DOMAIN}
+    clientId={AUTH0_CLIENT_ID}
+    authorizationParams={{
+      redirect_uri: window.location.origin
+    }}
+    cacheLocation="localstorage"
+    useRefreshTokens={true}
+  >
+    <AuthProvider>
+      <App />
+    </AuthProvider>
+  </Auth0Provider>
 );
