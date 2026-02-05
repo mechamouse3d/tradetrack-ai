@@ -49,7 +49,9 @@ const FileImportModal: React.FC<FileImportModalProps> = ({ onImport, onClose }) 
     const validFiles = newFiles.filter(file => 
       file.type === 'application/pdf' || 
       file.type.startsWith('image/') || 
-      file.type === 'text/csv'
+      file.type === 'text/csv' || 
+      file.type === 'application/vnd.ms-excel' ||
+      file.name.toLowerCase().endsWith('.csv')
     );
     
     if (validFiles.length !== newFiles.length) {
@@ -79,7 +81,7 @@ const FileImportModal: React.FC<FileImportModalProps> = ({ onImport, onClose }) 
             // Remove the data URL prefix (e.g., "data:image/jpeg;base64,")
             const data = base64String.split(',')[1];
             resolve({
-              mimeType: f.file.type,
+              mimeType: f.file.type || (f.file.name.endsWith('.csv') ? 'text/csv' : 'application/octet-stream'),
               data: data
             });
           };
@@ -95,12 +97,12 @@ const FileImportModal: React.FC<FileImportModalProps> = ({ onImport, onClose }) 
         onImport(transactions);
         onClose();
       } else {
-        setError("No transactions found in the provided documents.");
+        setError("No transactions found in the provided documents. Please ensure the files contain clear trade details.");
       }
 
     } catch (err) {
       console.error(err);
-      setError("Failed to process files. Please try again.");
+      setError("Failed to process files. The document format might be unsupported or the AI could not extract the data.");
     } finally {
       setIsProcessing(false);
     }

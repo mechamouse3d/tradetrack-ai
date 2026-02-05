@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { Transaction, StockSummary, PortfolioStats } from './types';
 import StatsCards from './components/StatsCards';
@@ -72,7 +71,8 @@ const App: React.FC = () => {
 
   // 2. Dynamic Price Fetching
   const portfolioSymbols = useMemo(() => {
-    const symbols = new Set(transactions.map(t => t.symbol));
+    // Normalize to Uppercase
+    const symbols = new Set(transactions.map(t => t.symbol.toUpperCase().trim()));
     return Array.from(symbols);
   }, [transactions]);
 
@@ -92,12 +92,16 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (isDataLoaded && portfolioSymbols.length > 0) {
-      const missingPrices = portfolioSymbols.filter(s => !currentPrices[s]);
+      // Check if we have prices for all symbols (key check is case-sensitive, so use normalized symbols)
+      const missingPrices = portfolioSymbols.filter(s => currentPrices[s] === undefined);
+      
       if (missingPrices.length > 0) {
         updateMarketPrices(portfolioSymbols);
       }
     }
-  }, [portfolioSymbols, isDataLoaded]);
+  }, [portfolioSymbols, isDataLoaded]); 
+  // Note: we purposely do not include currentPrices in dependency to avoid loops, 
+  // but if initial load has empty prices, missingPrices.length > 0 triggers fetch.
 
   // 3. User-Specific Auto-Save (Caching)
   useEffect(() => {
@@ -112,10 +116,17 @@ const App: React.FC = () => {
   }, [transactions, currentPrices, user, isDataLoaded, isAuthLoading]);
 
   const handleSaveTransaction = (transactionData: Transaction | Omit<Transaction, 'id'>) => {
-    if ('id' in transactionData) {
-      setTransactions(prev => prev.map(t => t.id === transactionData.id ? transactionData as Transaction : t));
+    // Ensure normalization on save
+    const normalizedData = {
+        ...transactionData,
+        symbol: transactionData.symbol.toUpperCase().trim(),
+        type: transactionData.type.toString().toUpperCase().trim() as 'BUY' | 'SELL'
+    };
+
+    if ('id' in normalizedData) {
+      setTransactions(prev => prev.map(t => t.id === normalizedData.id ? normalizedData as Transaction : t));
     } else {
-      const newTransaction = { ...transactionData, id: Math.random().toString(36).substr(2, 9) };
+      const newTransaction = { ...normalizedData, id: Math.random().toString(36).substr(2, 9) };
       setTransactions(prev => [...prev, newTransaction]);
     }
     setIsFormOpen(false);
@@ -154,10 +165,19 @@ const App: React.FC = () => {
   };
 
   const handleBulkImport = (newTransactions: Omit<Transaction, 'id'>[]) => {
-      const transactionsWithIds = newTransactions.map(t => ({
-          ...t,
-          id: Math.random().toString(36).substr(2, 9)
-      }));
+      const transactionsWithIds = newTransactions.map(t => {
+          // Normalize type: Strictly BUY or SELL. 
+          // Default to BUY unless explicitly a SELL (e.g. "Sold", "Sell", "Disposition").
+          const rawType = t.type ? t.type.toString().toUpperCase() : 'BUY';
+          const normalizedType = rawType.includes('SELL') || rawType.includes('SOLD') ? 'SELL' : 'BUY';
+
+          return {
+            ...t,
+            type: normalizedType as 'BUY' | 'SELL',
+            symbol: t.symbol.toUpperCase().trim(), // Normalize import
+            id: Math.random().toString(36).substr(2, 9)
+          };
+      });
       setTransactions(prev => [...prev, ...transactionsWithIds]);
   };
 
@@ -168,8 +188,10 @@ const App: React.FC = () => {
   const { portfolio, stats } = useMemo(() => {
     const groups: Record<string, Transaction[]> = {};
     transactions.forEach(t => {
-      if (!groups[t.symbol]) groups[t.symbol] = [];
-      groups[t.symbol].push(t);
+      // Robust key generation
+      const symbolKey = t.symbol.toUpperCase().trim();
+      if (!groups[symbolKey]) groups[symbolKey] = [];
+      groups[symbolKey].push(t);
     });
 
     const stockSummaries: StockSummary[] = [];
@@ -186,15 +208,22 @@ const App: React.FC = () => {
       let realizedPL = 0;
 
       txs.forEach(t => {
-        if (t.type === 'BUY') {
-          sharesHeld += t.shares;
-          totalCost += t.shares * t.price;
-        } else if (t.type === 'SELL') {
+        // Robust normalization: Convert strings to numbers and ensure type matches 'BUY'/'SELL' case-insensitively
+        const shares = Number(t.shares);
+        const price = Number(t.price);
+        const type = (t.type || '').toString().toUpperCase().trim();
+
+        if (isNaN(shares) || isNaN(price)) return;
+
+        if (type === 'BUY') {
+          sharesHeld += shares;
+          totalCost += shares * price;
+        } else if (type === 'SELL') {
           const avgCostPerShare = sharesHeld > 0 ? totalCost / sharesHeld : 0;
-          const costOfSoldShares = t.shares * avgCostPerShare;
-          const revenue = t.shares * t.price;
+          const costOfSoldShares = shares * avgCostPerShare;
+          const revenue = shares * price;
           realizedPL += (revenue - costOfSoldShares);
-          sharesHeld -= t.shares;
+          sharesHeld -= shares;
           totalCost -= costOfSoldShares;
         }
       });
@@ -202,6 +231,7 @@ const App: React.FC = () => {
       if (sharesHeld < 0.000001) { sharesHeld = 0; totalCost = 0; }
 
       const avgCost = sharesHeld > 0 ? totalCost / sharesHeld : 0;
+      // Exact key match for price lookup
       const currentPrice = currentPrices[symbol] || null;
       
       totalRealizedPL += realizedPL;
@@ -217,7 +247,7 @@ const App: React.FC = () => {
 
       stockSummaries.push({
         symbol,
-        name: txs[0].name,
+        name: txs[0]?.name || symbol,
         totalShares: sharesHeld,
         avgCost: avgCost,
         currentPrice: currentPrice,
