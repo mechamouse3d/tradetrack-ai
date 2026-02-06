@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 
 const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -27,7 +28,7 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 2, baseDelay = 3000)
     const isRateLimit = error?.message?.includes("429") || error?.status === 429 || error?.message?.includes("RESOURCE_EXHAUSTED");
     if (isRateLimit && retries > 0) {
       const delay = baseDelay + Math.random() * 1000; // Add jitter
-      console.warn(`Quota exceeded. Retrying in ${Math.round(delay)}ms... (${retries} retries left)`);
+      console.warn(`Quota exceeded. Retrying in ${Math.round(delay)}ms... (${retries} left)`);
       await wait(delay);
       return withRetry(fn, retries - 1, baseDelay * 2);
     }
@@ -38,7 +39,6 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 2, baseDelay = 3000)
 export const parseTransactionWithAI = async (input: string): Promise<any> => {
   return withRetry(async () => {
     const ai = getAI();
-    // Using gemini-3-flash-preview for better quota availability
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `Parse into JSON: "${input}". Fields: date, type(BUY/SELL), symbol, name, shares, price, account, exchange, currency.`,
@@ -117,11 +117,11 @@ export const fetchCurrentPrices = async (
   return withRetry(async () => {
     const ai = getAI();
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: `Stock prices for: ${symbols.join(', ')}. JSON: {"TICKER": price}. Use current market data.`,
+      model: "gemini-2.5-flash",
+      contents: `Stock prices for: ${symbols.join(', ')}. Please provide the data in a clear JSON format like this: {"TICKER": price}. Use current market data from Google Search.`,
       config: {
         tools: [{ googleSearch: {} }],
-        responseMimeType: "application/json"
+        // responseMimeType: "application/json" is not supported when using tools like googleSearch
       }
     });
 
@@ -132,5 +132,5 @@ export const fetchCurrentPrices = async (
     });
     const sources = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
     return { prices: normalizedPrices, sources };
-  }, 1, 5000); // Fewer retries for search grounding as it has stricter quotas
+  }, 1, 5000);
 };
